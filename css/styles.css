@@ -389,3 +389,10 @@ table.standings tr.leader td{ background:color-mix(in srgb, var(--gold) 12%, tra
   border-radius:999px; padding:3px 8px; white-space:nowrap;
 }
 .slot.advanced .s-seed{ display:none; }   /* room for the Advances chip */
+
+.byes-note{
+  border:1px dashed var(--line-strong); border-radius:11px;
+  padding:9px 11px; font-size:.76rem; line-height:1.45; color:var(--text-soft);
+  background:color-mix(in srgb, var(--surface-2) 70%, transparent);
+}
+.byes-note strong{ color:var(--text); }

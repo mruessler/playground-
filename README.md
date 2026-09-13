@@ -21,11 +21,17 @@ Everything runs in the browser. No server, no database, no accounts, no internet
 | Format | What it does |
 | --- | --- |
 | Single elimination | Straight knockout. Non-power-of-two fields get byes, spread across the bracket by seed. Optional third-place match. |
+
 | Double elimination | Upper and lower brackets — two losses to go out. Optional bracket reset in the grand final (game two is only playable when the lower-bracket team wins game one). |
 | Round robin | Everyone plays everyone, with a live table. Optional home-and-away second leg, optional draws. |
 
 The order teams are typed in is the seeding: seed 1 plays the lowest seed, and byes go to
 the top seeds. **Shuffle seeding** randomises it for you.
+
+Byes are never shown as fixtures — a team with no opponent is listed under its round as
+going straight through, and simply appears in the next round. The setup panel tells you
+how many byes a team count implies before you generate anything, so five teams reads as
+"8-team bracket · 3 byes in round one" rather than springing three walkovers on you.
 
 ### Scores and results
 

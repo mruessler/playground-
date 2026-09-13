@@ -450,14 +450,16 @@
       cls.push('bye'); nameHTML = 'Bye'; av = '<span class="avatar" aria-hidden="true">–</span>';
     } else {
       cls.push('tbd');
-      nameHTML = r.status === 'void' ? '&mdash;' : pendingLabel(m, side);
+      nameHTML = r.status === 'void' ? '&mdash;' : pendingLabel(m, side, res);
       av = '<span class="avatar" aria-hidden="true">' + (r.status === 'void' ? '&ndash;' : '?') + '</span>';
     }
     if (r.status === 'void' || r.status === 'locked') { disabled = true; }
 
     // A walkover or a match that will never be played gets no score box at all.
     var scoreHTML;
-    if (r.status === 'bye' || r.status === 'void' || r.status === 'locked') {
+    if (r.status === 'void' || r.status === 'locked') {
+      scoreHTML = '';   // nothing to enter, so give the names the full width
+    } else if (r.status === 'bye') {
       scoreHTML = cls.indexOf('advanced') > -1
         ? '<span class="tag-advance">Advances</span>'
         : '<span class="score-blank" aria-hidden="true"></span>';
@@ -473,29 +475,44 @@
       '<span class="s-name">' + nameHTML + '</span>' + seedHTML + scoreHTML + '</div>';
   }
 
-  // Human-readable "waiting for…" text, e.g. "Winner of M4"
-  function pendingLabel(m, side) {
-    var ref = side === 'a' ? m.a : m.b;
-    if (!ref || ref.k === 'team') return 'To be decided';
-    if (ref.k === 'bye') return 'Bye';
-    var src = matchIndex[ref.m];
-    if (!src) return 'To be decided';
-    return (ref.k === 'W' ? 'Winner of ' : 'Loser of ') + src.label;
+  // Human-readable "waiting for…" text, e.g. "Winner of M4". Walkovers are
+  // skipped over: a slot fed by an unplayed bye names that bye's own source.
+  function pendingLabel(m, side, res) {
+    return refLabel(side === 'a' ? m.a : m.b, res, 0);
   }
 
-  var matchIndex = {};   // id -> { label }
+  function refLabel(ref, res, depth) {
+    if (!ref || depth > 8) return 'To be decided';
+    if (ref.k === 'bye') return 'Bye';
+    if (ref.k === 'team') { var t = teamById(ref.id); return t ? t.name : 'To be decided'; }
+    var src = matchById[ref.m], r = res && res[ref.m];
+    if (!src || !matchIndex[ref.m]) return 'To be decided';
+    // Any match with a bye in one slot is a walkover, decided or not — look past it.
+    var byeSide = r ? (r.a.t === 'bye' ? 'a' : (r.b.t === 'bye' ? 'b' : null)) : null;
+    if (byeSide) {
+      if (ref.k !== 'W') return 'Bye';
+      return refLabel(byeSide === 'a' ? src.b : src.a, res, depth + 1);
+    }
+    return (ref.k === 'W' ? 'Winner of ' : 'Loser of ') + matchIndex[ref.m].label;
+  }
+
+  var matchIndex = {};   // id -> { label, num }
+  var matchById = {};
   function buildMatchIndex() {
     matchIndex = {};
+    matchById = {};
     var n = 0;
     T.matches.forEach(function (m) {
       n++;
       var label;
-      if (m.bracket === 'GF') label = m.conditional === 'reset' ? 'GF2' : 'GF';
+      // Referenced from the reset card, which sits right beside it.
+      if (m.bracket === 'GF') label = m.conditional === 'reset' ? 'game two' : 'game one';
       else if (m.bracket === '3P') label = '3rd';
       else if (m.bracket === 'LB') label = 'L' + m.round + '.' + (m.order + 1);
       else if (m.bracket === 'RR') label = 'R' + m.round + '.' + (m.order + 1);
       else label = 'M' + n;
       matchIndex[m.id] = { label: label, num: n };
+      matchById[m.id] = m;
     });
   }
 
@@ -538,12 +555,40 @@
     matches.forEach(function (m) { (byRound[m.round] = byRound[m.round] || []).push(m); });
     var rounds = Object.keys(byRound).map(Number).sort(function (a, b) { return a - b; });
     var html = '<div class="bracket-scroll"><div class="bracket">';
+    var shown = 0;
     rounds.forEach(function (r, idx) {
       var list = byRound[r];
-      html += '<div class="round"><div class="round-head">' + esc(titleFor(r, list, idx === rounds.length - 1)) + '</div><div class="round-body">';
+      // Walkovers are not fixtures. Rather than a card per bye, name the teams
+      // sitting the round out in one line — they show up in the next column.
+      var played = [], sittingOut = [];
       list.forEach(function (m) {
+        var rm = res[m.id];
+        var byeSide = rm.a.t === 'bye' ? 'a' : (rm.b.t === 'bye' ? 'b' : null);
+        if (!byeSide) { played.push(m); return; }
+        // A slot filled by a bye can never become a team, so this is a walkover
+        // even while the other side is still undecided.
+        var other = byeSide === 'a' ? rm.b : rm.a;
+        if (other.t === 'team') {
+          var t = teamById(other.id);
+          if (t) sittingOut.push({ name: t.name, seed: t.seed });
+        } else if (other.t === 'tbd') {
+          sittingOut.push({ name: pendingLabel(m, byeSide === 'a' ? 'b' : 'a', res), seed: 1e6 });
+        }
+      });
+      sittingOut.sort(function (x, y) { return x.seed - y.seed; });
+      if (!played.length) return;   // a round of nothing but walkovers needs no column
+
+      shown++;
+      html += '<div class="round"><div class="round-head">' + esc(titleFor(r, list, idx === rounds.length - 1, shown)) + '</div><div class="round-body">';
+      played.forEach(function (m) {
         html += matchHTML(m, res, { final: m.id === finalId });
       });
+      if (sittingOut.length) {
+        html += '<div class="byes-note"><strong>' +
+          (sittingOut.length === 1 ? 'Bye' : sittingOut.length + ' byes') + '</strong> · ' +
+          esc(sittingOut.map(function (t) { return t.name; }).join(', ')) +
+          ' go' + (sittingOut.length === 1 ? 'es' : '') + ' straight through</div>';
+      }
       html += '</div></div>';
     });
     return html + '</div></div>';
@@ -553,6 +598,9 @@
     var wb = T.matches.filter(function (m) { return m.bracket === 'WB'; });
     var finalMatch = wb[wb.length - 1];
     var html = bracketColumnsHTML(wb, res, function (r, list, isLast) {
+      // With enough byes the opening round is a play-in, not a real quarter-final.
+      var real = list.filter(function (m) { return res[m.id].status !== 'bye'; }).length;
+      if (!isLast && real * 2 < list.length) return 'Preliminary round';
       return roundLabel(list.length, isLast);
     }, finalMatch.id);
 
@@ -571,13 +619,13 @@
     var gf = T.matches.filter(function (m) { return m.bracket === 'GF'; });
 
     var html = '<div class="section-title"><h2>Upper bracket</h2><span class="muted">Lose here and you drop to the lower bracket.</span></div>';
-    html += bracketColumnsHTML(wb, res, function (r, list, isLast) {
-      return isLast ? 'Upper final' : 'Upper round ' + r;
+    html += bracketColumnsHTML(wb, res, function (r, list, isLast, shown) {
+      return isLast ? 'Upper final' : 'Upper round ' + shown;
     }, null);
 
     html += '<div class="section-title"><h2>Lower bracket</h2><span class="muted">Second chance — one more loss and you are out.</span></div>';
-    html += bracketColumnsHTML(lb, res, function (r, list, isLast) {
-      return isLast ? 'Lower final' : 'Lower round ' + r;
+    html += bracketColumnsHTML(lb, res, function (r, list, isLast, shown) {
+      return isLast ? 'Lower final' : 'Lower round ' + shown;
     }, null);
 
     html += '<div class="section-title"><h2>Grand final</h2></div>';
