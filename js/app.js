@@ -397,7 +397,7 @@
   var el = {};
   function cacheEls() {
     ['setupCard', 'setupBody', 'setupForm', 'toggleSetupBtn', 'setupSubtitle', 'tName', 'tMode', 'tCount',
-      'countMinus', 'countPlus', 'modeHint', 'optRow', 'teamGrid', 'teamsCountPill', 'shuffleBtn',
+      'countMinus', 'countPlus', 'modeHint', 'countHint', 'optRow', 'teamGrid', 'teamsCountPill', 'shuffleBtn',
       'pasteToggle', 'pasteBox', 'pasteArea', 'pasteApply', 'clearNamesBtn', 'generateBtn', 'applyNamesBtn',
       'setupMsg', 'liveSection', 'liveTitle', 'summaryMeta', 'progressBar', 'progressLabel', 'view',
       'championBox', 'emptyState', 'themeBtn', 'exportBtn', 'importBtn', 'importFile', 'printBtn',
@@ -442,7 +442,9 @@
       seedHTML = t ? '<span class="s-seed">#' + t.seed + '</span>' : '';
       av = avatar(nm);
       disabled = !(r.a.t === 'team' && r.b.t === 'team');
-      if (r.winner && r.winner.t === 'team' && r.winner.id === slot.id) cls.push('won');
+      var isWinner = r.winner && r.winner.t === 'team' && r.winner.id === slot.id;
+      // A walkover is not a result — never dress it up as one.
+      if (isWinner) cls.push(r.status === 'bye' ? 'advanced' : 'won');
       else if (r.status === 'done') cls.push('lost');
     } else if (slot.t === 'bye') {
       cls.push('bye'); nameHTML = 'Bye'; av = '<span class="avatar" aria-hidden="true">–</span>';
@@ -456,7 +458,9 @@
     // A walkover or a match that will never be played gets no score box at all.
     var scoreHTML;
     if (r.status === 'bye' || r.status === 'void' || r.status === 'locked') {
-      scoreHTML = '<span class="score-blank" aria-hidden="true"></span>';
+      scoreHTML = cls.indexOf('advanced') > -1
+        ? '<span class="tag-advance">Advances</span>'
+        : '<span class="score-blank" aria-hidden="true"></span>';
     } else {
       scoreHTML = '<input class="score" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" ' +
         'value="' + (value == null ? '' : value) + '" ' +
@@ -502,16 +506,22 @@
     if (r.status === 'done') cls.push('is-done');
     if (r.status === 'ready' || r.status === 'tie' || r.status === 'draw') cls.push('is-live');
     if (r.status === 'void' || r.status === 'locked') cls.push('is-void');
+    if (r.status === 'bye') cls.push('is-bye');
     if (opts.final) cls.push('is-final');
 
     var head = opts.title || matchIndex[m.id].label;
+    if (r.status === 'bye') head += ' · walkover';
     var canClear = (m.scoreA != null || m.scoreB != null);
 
     var note = '';
     if (r.status === 'tie') note = '<div class="m-note warn">A knockout match needs a winner — break the tie.</div>';
     else if (r.status === 'void') note = '<div class="m-note info">Not needed — the upper-bracket team held on.</div>';
     else if (r.status === 'locked') note = '<div class="m-note info">Only played if the lower-bracket team wins game one.</div>';
-    else if (r.status === 'bye') note = '<div class="m-note info">Bye — walkover to the next round.</div>';
+    else if (r.status === 'bye') {
+      var adv = r.winner && r.winner.t === 'team' ? teamById(r.winner.id) : null;
+      note = '<div class="m-note info">Not played &mdash; ' +
+        (adv ? esc(adv.name) + ' had no opponent in this round.' : 'nobody to play.') + '</div>';
+    }
 
     return '<div class="' + cls.join(' ') + '" data-match="' + m.id + '">' +
       '<div class="m-head"><span>' + esc(head) + '</span>' +
@@ -633,6 +643,8 @@
     if (!T) {
       el.liveSection.hidden = true;
       el.emptyState.hidden = false;
+      el.view.innerHTML = '';
+      el.championBox.innerHTML = '';
       return;
     }
     el.liveSection.hidden = false;
@@ -693,6 +705,22 @@
     el.teamsCountPill.textContent = draft.count;
   }
 
+  // Spells out what the team count means before anything is generated, so a
+  // walkover in round one is never a surprise.
+  function updateCountHint() {
+    var n = draft.count, txt;
+    if (draft.mode === 'roundrobin') {
+      var games = n * (n - 1) / 2;
+      if (draft.options.doubleRR) games *= 2;
+      txt = n + ' teams · ' + games + ' matches';
+    } else {
+      var size = nextPow2(n), byes = size - n;
+      txt = n + ' teams · ' + size + '-team bracket · ' +
+        (byes ? byes + (byes === 1 ? ' bye' : ' byes') + ' in round one, given to the top seeds' : 'no byes');
+    }
+    el.countHint.textContent = txt;
+  }
+
   function renderSetup() {
     el.tName.value = draft.name;
     el.tMode.value = draft.mode;
@@ -700,6 +728,7 @@
     el.modeHint.textContent = MODES[draft.mode].hint;
     renderOptions();
     renderTeamInputs();
+    updateCountHint();
     el.applyNamesBtn.hidden = !(T && T.teams.length === draft.count);
     el.generateBtn.textContent = T ? 'Regenerate tournament' : 'Generate tournament';
     setSetupMsg('');
@@ -710,6 +739,7 @@
   function setCount(n) {
     draft.count = clamp(n, MIN_TEAMS, MAX_TEAMS);
     renderTeamInputs();
+    updateCountHint();
     el.tCount.value = draft.count;
     el.applyNamesBtn.hidden = !(T && T.teams.length === draft.count);
     writeStore();
@@ -826,6 +856,7 @@
       draft.mode = el.tMode.value;
       el.modeHint.textContent = MODES[draft.mode].hint;
       renderOptions();
+      updateCountHint();
       writeStore();
     });
 
@@ -848,6 +879,7 @@
       var key = e.target.getAttribute && e.target.getAttribute('data-opt');
       if (!key) return;
       draft.options[key] = e.target.checked;
+      updateCountHint();
       writeStore();
     });
 
@@ -889,6 +921,7 @@
       draft.count = lines.length;
       el.tCount.value = draft.count;
       renderTeamInputs();
+      updateCountHint();
       el.pasteBox.hidden = true;
       el.pasteToggle.setAttribute('aria-expanded', 'false');
       writeStore();

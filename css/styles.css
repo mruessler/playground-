@@ -378,3 +378,14 @@ table.standings tr.leader td{ background:color-mix(in srgb, var(--gold) 12%, tra
 }
 
 .score-blank{ flex:0 0 46px; width:46px; height:34px; }
+
+/* A walkover is not a played result — it gets its own, quieter treatment. */
+.match.is-bye{ border-style:dashed; }
+.slot.advanced{ background:var(--surface-2); }
+.slot.advanced .s-name{ font-weight:700; }
+.tag-advance{
+  flex:0 0 auto; font-size:.62rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em;
+  color:var(--text-soft); border:1px solid var(--line-strong);
+  border-radius:999px; padding:3px 8px; white-space:nowrap;
+}
+.slot.advanced .s-seed{ display:none; }   /* room for the Advances chip */
